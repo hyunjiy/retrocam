@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>RetroCam</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; }
+
+html, body {
+  width: 100%; height: 100dvh;
+  background: #000;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  align-items: center;
+  font-family: -apple-system, 'Helvetica Neue', Helvetica, sans-serif;
+  max-width: 430px;
+  margin: 0 auto;
+}
+
+/* ── TOP BAR ── */
+.top-bar {
+  width: 100%;
+  height: 52px;
+  background: #1a1a1a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  flex-shrink: 0;
+  position: relative;
+  border-bottom: 0.5px solid #2a2a2a;
+}
+
+/* Flash toggle */
+.flash-btn {
+  display: flex; align-items: center; gap: 5px;
+  background: none; border: none; cursor: pointer;
+  color: #fff; font-size: 12px; font-weight: 400;
+  padding: 6px 4px;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+.flash-btn:active { opacity: 0.5; }
+.flash-btn svg { flex-shrink: 0; }
+.flash-label { font-size: 11px; letter-spacing: 0.01em; }
+
+/* HDR */
+.hdr-btn {
+  background: none; border: none; cursor: pointer;
+  color: rgba(255,255,255,0.55);
+  font-size: 12px; font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 6px 8px;
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 4px;
+  transition: all 0.15s;
+  line-height: 1;
+}
+.hdr-btn:active { opacity: 0.5; }
+
+/* Filter selector (top center) */
+.filter-selector {
+  position: absolute;
+  left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 0;
+  background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.fs-btn {
+  background: none; border: none;
+  color: rgba(255,255,255,0.5);
+  font-size: 11px; font-weight: 500;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  border-right: 1px solid rgba(255,255,255,0.12);
+}
+.fs-btn:last-child { border-right: none; }
+.fs-btn:active { opacity: 0.5; }
+.fs-btn.active {
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+}
+
+/* Flip camera */
+.flip-btn {
+  background: none; border: none; cursor: pointer;
+  color: #fff; opacity: 0.85;
+  padding: 6px 4px;
+  transition: opacity 0.15s, transform 0.3s;
+}
+.flip-btn:active { opacity: 0.5; transform: scaleX(-1); }
+
+/* ── VIEWFINDER ── */
+.vf {
+  flex: 1;
+  width: 100%;
+  position: relative;
+  background: #000;
+  overflow: hidden;
+}
+
+#videoEl {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+#uploadPreview {
+  display: none;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  position: absolute; inset: 0;
+}
+
+/* Filter overlays */
+.vignette {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.72) 100%);
+  opacity: 0; transition: opacity 0.3s;
+}
+.grain {
+  position: absolute; inset: -50%; width: 200%; height: 200%;
+  pointer-events: none; opacity: 0; transition: opacity 0.3s;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 130px; mix-blend-mode: overlay;
+  animation: gr 0.09s steps(1) infinite;
+}
+@keyframes gr {
+  0%  { transform: translate(0,0) }   25% { transform: translate(-2%,3%) }
+  50% { transform: translate(3%,-2%) } 75% { transform: translate(-3%,-3%) }
+}
+
+/* Focus square — classic iOS white rect */
+.focus-sq {
+  position: absolute;
+  width: 72px; height: 72px;
+  border: 1.5px solid rgba(255,255,255,0.9);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%,-50%) scale(1.3);
+  transition: opacity 0.1s, transform 0.15s;
+  top: 50%; left: 50%;
+}
+.focus-sq.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+
+/* Flash overlay */
+.flash-overlay { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+
+/* Start / upload screens */
+.placeholder {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px;
+  background: #000; cursor: pointer;
+  transition: opacity 0.2s;
+}
+.placeholder-icon {
+  width: 62px; height: 62px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.2);
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.2s;
+}
+.placeholder:hover .placeholder-icon { border-color: rgba(255,255,255,0.5); }
+.placeholder p { font-size: 13px; color: rgba(255,255,255,0.45); font-weight: 300; }
+
+#processCanvas { display: none; }
+#fileInput { display: none; }
+
+/* ── BOTTOM BAR ── */
+.bottom-bar {
+  width: 100%;
+  height: 120px;
+  background: #1a1a1a;
+  border-top: 0.5px solid #2a2a2a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px 16px;
+  flex-shrink: 0;
+}
+
+/* Thumbnail */
+.thumb-area {
+  width: 52px; height: 52px;
+  flex-shrink: 0; position: relative;
+}
+.thumb-empty {
+  width: 52px; height: 52px;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+}
+.thumb-img {
+  width: 52px; height: 52px;
+  border-radius: 6px; object-fit: cover;
+  display: none; cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.15);
+  transition: opacity 0.15s;
+}
+.thumb-img:active { opacity: 0.7; }
+.thumb-badge {
+  position: absolute; bottom: -5px; right: -5px;
+  background: #fff; color: #000;
+  font-size: 9px; font-weight: 700;
+  width: 17px; height: 17px; border-radius: 50%;
+  display: none; align-items: center; justify-content: center;
+}
+
+/* Shutter — iPhone 5 style: outer ring + inner camera icon */
+.shutter {
+  width: 72px; height: 72px; border-radius: 50%;
+  border: 3px solid rgba(255,255,255,0.8);
+  background: transparent;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: transform 0.08s;
+  flex-shrink: 0;
+}
+.shutter-inner {
+  width: 60px; height: 60px; border-radius: 50%;
+  background: rgba(255,255,255,0.88);
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.08s;
+}
+.shutter-inner svg { opacity: 0.65; }
+.shutter:active { transform: scale(0.9); }
+.shutter:active .shutter-inner { background: rgba(210,210,210,0.88); }
+.shutter:disabled { opacity: 0.2; cursor: default; }
+.shutter:disabled:active { transform: none; }
+
+/* Upload / mode button (right side) */
+.mode-btn {
+  width: 52px; height: 52px; border-radius: 50%;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.15);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0;
+  transition: background 0.15s;
+}
+.mode-btn:active { background: rgba(255,255,255,0.15); }
+
+/* ── GALLERY SHEET ── */
+.overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+  z-index: 50; opacity: 0; pointer-events: none; transition: opacity 0.25s;
+}
+.overlay.open { opacity: 1; pointer-events: all; }
+
+.sheet {
+  position: fixed; bottom: 0; left: 50%;
+  transform: translateX(-50%) translateY(100%);
+  width: 100%; max-width: 430px;
+  background: #1c1c1e; border-radius: 14px 14px 0 0;
+  z-index: 51; transition: transform 0.3s cubic-bezier(0.32,0.72,0,1);
+  max-height: 80dvh; display: flex; flex-direction: column;
+}
+.sheet.open { transform: translateX(-50%) translateY(0); }
+.sheet-handle { width: 38px; height: 4px; background: rgba(255,255,255,0.18); border-radius: 2px; margin: 10px auto 0; flex-shrink: 0; }
+.sheet-head { padding: 10px 18px 8px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.sheet-title { font-size: 15px; font-weight: 600; }
+.sheet-close { font-size: 13px; color: #FFD60A; background: none; border: none; cursor: pointer; }
+.sheet-grid { overflow-y: auto; padding: 2px 10px 32px; display: grid; grid-template-columns: repeat(3,1fr); gap: 3px; }
+.grid-item { aspect-ratio: 1; object-fit: cover; cursor: pointer; border-radius: 2px; transition: opacity 0.15s; }
+.grid-item:active { opacity: 0.7; }
+
+/* ── LIGHTBOX ── */
+.lightbox {
+  position: fixed; inset: 0; background: #000; z-index: 100;
+  display: flex; flex-direction: column;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.lightbox.open { opacity: 1; pointer-events: all; }
+.lb-top { height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; flex-shrink: 0; }
+.lb-close { font-size: 13px; color: #FFD60A; background: none; border: none; cursor: pointer; }
+.lb-num { font-size: 13px; color: rgba(255,255,255,0.4); }
+.lb-img { flex: 1; display: flex; align-items: center; justify-content: center; padding: 0 0 8px; overflow: hidden; }
+.lb-img img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.lb-actions { display: flex; gap: 10px; padding: 8px 18px 40px; flex-shrink: 0; }
+.lb-btn { flex: 1; padding: 13px; border-radius: 10px; border: none; font-family: inherit; font-size: 15px; font-weight: 500; cursor: pointer; transition: opacity 0.12s; }
+.lb-btn:active { opacity: 0.75; }
+.lb-btn.save { background: #FFD60A; color: #000; font-weight: 600; }
+.lb-btn.del  { background: rgba(255,59,48,0.12); color: #FF3B30; border: 1px solid rgba(255,59,48,0.2); }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="top-bar">
+  <!-- Flash -->
+  <button class="flash-btn" id="flashToggle">
+    <svg width="16" height="20" viewBox="0 0 16 20" fill="none">
+      <path d="M9 1L1 11.5H8L7 19L15 8.5H8L9 1Z" fill="white" stroke="white" stroke-width="0.5" stroke-linejoin="round"/>
+    </svg>
+    <span class="flash-label" id="flashLabel">자동</span>
+  </button>
+
+  <!-- Filter selector (center) -->
+  <div class="filter-selector">
+    <button class="fs-btn active" data-filter="ip5">iPhone 5</button>
+    <button class="fs-btn" data-filter="ip6">iPhone 6</button>
+    <button class="fs-btn" data-filter="sony">Sony</button>
+  </div>
+
+  <!-- Flip -->
+  <button class="flip-btn" id="flipBtn">
+    <svg width="26" height="22" viewBox="0 0 26 22" fill="none">
+      <path d="M2 6C2 4.34315 3.34315 3 5 3H21C22.6569 3 24 4.34315 24 6V16C24 17.6569 22.6569 19 21 19H5C3.34315 19 2 17.6569 2 16V6Z" stroke="white" stroke-width="1.5"/>
+      <circle cx="13" cy="11" r="3.5" stroke="white" stroke-width="1.5"/>
+      <circle cx="6" cy="6.5" r="1" fill="white"/>
+      <!-- flip arrows -->
+      <path d="M9 0.5L6.5 3L9 5.5" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M17 0.5L19.5 3L17 5.5" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </button>
+</div>
+
+<!-- VIEWFINDER -->
+<div class="vf" id="vf">
+  <video id="videoEl" autoplay playsinline muted></video>
+  <img id="uploadPreview" alt="">
+  <div class="vignette" id="vignette"></div>
+  <div class="grain" id="grain"></div>
+  <div class="focus-sq" id="focusSq"></div>
+  <div class="flash-overlay" id="flashOverlay"></div>
+
+  <div class="placeholder" id="startScreen">
+    <div class="placeholder-icon">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.3">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+    </div>
+    <p>탭하여 카메라 시작</p>
+  </div>
+
+  <div class="placeholder" id="uploadZone" style="display:none;">
+    <div class="placeholder-icon">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.3">
+        <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
+        <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+      </svg>
+    </div>
+    <p>탭하여 사진 불러오기</p>
+  </div>
+
+  <canvas id="processCanvas"></canvas>
+  <input type="file" id="fileInput" accept="image/*">
+</div>
+
+<!-- BOTTOM BAR -->
+<div class="bottom-bar">
+  <!-- Thumbnail -->
+  <div class="thumb-area">
+    <div class="thumb-empty" id="thumbEmpty">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="1.3">
+        <rect x="3" y="3" width="18" height="18" rx="2"/>
+        <circle cx="8.5" cy="8.5" r="1.5"/>
+        <polyline points="21 15 16 10 5 21"/>
+      </svg>
+    </div>
+    <img class="thumb-img" id="thumbImg" alt="">
+    <div class="thumb-badge" id="thumbBadge"></div>
+  </div>
+
+  <!-- Shutter -->
+  <button class="shutter" id="shutterBtn" disabled>
+    <div class="shutter-inner">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="1.4">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+    </div>
+  </button>
+
+  <!-- Mode / Upload -->
+  <button class="mode-btn" id="modeBtn" title="업로드 모드">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.4">
+      <rect x="3" y="3" width="18" height="18" rx="2"/>
+      <circle cx="8.5" cy="8.5" r="1.5"/>
+      <polyline points="21 15 16 10 5 21"/>
+    </svg>
+  </button>
+</div>
+
+<!-- GALLERY SHEET -->
+<div class="overlay" id="overlay"></div>
+<div class="sheet" id="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head">
+    <div class="sheet-title">사진 <span id="sheetCount" style="color:rgba(255,255,255,0.4);font-weight:400;font-size:13px;"></span></div>
+    <button class="sheet-close" id="sheetClose">닫기</button>
+  </div>
+  <div class="sheet-grid" id="sheetGrid"></div>
+</div>
+
+<!-- LIGHTBOX -->
+<div class="lightbox" id="lightbox">
+  <div class="lb-top">
+    <button class="lb-close" id="lbClose">닫기</button>
+    <div class="lb-num" id="lbNum"></div>
+    <div style="width:40px;"></div>
+  </div>
+  <div class="lb-img"><img id="lbImg" src="" alt=""></div>
+  <div class="lb-actions">
+    <button class="lb-btn save" id="lbSave">저장</button>
+    <button class="lb-btn del"  id="lbDelete">삭제</button>
+  </div>
+</div>
+
+<script>
+// ── Filter definitions
+const FILTERS = {
+  ip5: {
+    label: 'iPhone 5',
+    css: 'brightness(0.94) contrast(1.05) saturate(0.80)',
+    r:1.01, g:0.98, b:0.97, lift:18, scale:0.88, bright:1.04,
+    noise:4, vignette:0.55, grain:0.10, smooth:true,
+  },
+  ip6: {
+    label: 'iPhone 6',
+    css: 'brightness(1.03) contrast(1.02) saturate(0.95)',
+    r:1.02, g:1.00, b:0.97, lift:0, scale:1.0, bright:1.03,
+    noise:1.5, vignette:0.20, grain:0.03, smooth:false,
+  },
+  sony: {
+    label: 'Sony',
+    css: 'brightness(1.02) contrast(1.05) saturate(0.98)',
+    r:0.98, g:1.00, b:1.04, lift:0, scale:1.0, bright:1.02,
+    noise:1.0, vignette:0.10, grain:0.01, smooth:false,
+  },
+};
+
+let currentFilter = 'ip5';
+let stream = null, facingMode = 'environment';
+let photos = [], currentLbIdx = -1;
+let isUploadMode = false, uploadedSrc = null;
+let flashMode = 'auto'; // auto / on / off
+
+const $ = id => document.getElementById(id);
+const videoEl     = $('videoEl');
+const uploadPrev  = $('uploadPreview');
+const vignetteEl  = $('vignette');
+const grainEl     = $('grain');
+const focusSq     = $('focusSq');
+const flashOverlay= $('flashOverlay');
+const startScreen = $('startScreen');
+const uploadZone  = $('uploadZone');
+const shutterBtn  = $('shutterBtn');
+const flipBtn     = $('flipBtn');
+const thumbEmpty  = $('thumbEmpty');
+const thumbImg    = $('thumbImg');
+const thumbBadge  = $('thumbBadge');
+const modeBtn     = $('modeBtn');
+const fileInput   = $('fileInput');
+const pc          = $('processCanvas');
+const overlay     = $('overlay');
+const sheet       = $('sheet');
+const sheetGrid   = $('sheetGrid');
+const sheetClose  = $('sheetClose');
+const sheetCount  = $('sheetCount');
+const lightbox    = $('lightbox');
+const lbImg       = $('lbImg');
+const lbClose     = $('lbClose');
+const lbNum       = $('lbNum');
+const lbSave      = $('lbSave');
+const lbDelete    = $('lbDelete');
+const flashToggle = $('flashToggle');
+const flashLabel  = $('flashLabel');
+
+// ── Flash toggle
+const flashModes = ['자동','켜짐','꺼짐'];
+let flashIdx = 0;
+flashToggle.addEventListener('click', () => {
+  flashIdx = (flashIdx + 1) % 3;
+  flashLabel.textContent = flashModes[flashIdx];
+  flashMode = ['auto','on','off'][flashIdx];
+});
+
+// ── Filter UI
+function applyFilterUI(key) {
+  const f = FILTERS[key];
+  const css = f.css;
+  videoEl.style.filter = css;
+  uploadPrev.style.filter = css;
+  vignetteEl.style.opacity = f.vignette;
+  grainEl.style.opacity    = f.grain;
+}
+
+document.querySelectorAll('.fs-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.fs-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.filter;
+    applyFilterUI(currentFilter);
+  });
+});
+
+// ── Camera
+async function startCamera() {
+  try {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode, width:{ideal:1920}, height:{ideal:2560} }, audio: false
+    });
+    videoEl.srcObject = stream;
+    videoEl.style.display = 'block';
+    startScreen.style.opacity = '0';
+    setTimeout(() => startScreen.style.display = 'none', 220);
+    shutterBtn.disabled = false;
+    applyFilterUI(currentFilter);
+  } catch(e) {
+    startScreen.querySelector('p').textContent = 'HTTPS 환경에서 사용 가능해요';
+  }
+}
+
+startScreen.addEventListener('click', () => { if (!isUploadMode) startCamera(); });
+
+// ── Tap to focus
+$('vf').addEventListener('click', e => {
+  if (!stream || isUploadMode) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  focusSq.style.left = ((e.clientX - rect.left) / rect.width  * 100) + '%';
+  focusSq.style.top  = ((e.clientY - rect.top)  / rect.height * 100) + '%';
+  focusSq.classList.add('show');
+  clearTimeout(focusSq._t);
+  focusSq._t = setTimeout(() => focusSq.classList.remove('show'), 1100);
+});
+
+// ── Flip
+flipBtn.addEventListener('click', () => {
+  if (!stream || isUploadMode) return;
+  facingMode = facingMode === 'environment' ? 'user' : 'environment';
+  startCamera();
+});
+
+// ── Flash anim
+function doFlash() {
+  if (flashMode === 'off') return;
+  flashOverlay.style.transition = 'opacity 0.03s';
+  flashOverlay.style.opacity = '1';
+  setTimeout(() => { flashOverlay.style.transition = 'opacity 0.45s'; flashOverlay.style.opacity = '0'; }, 40);
+}
+
+// ── Canvas render
+function renderCanvas(src, key, cb) {
+  const f = FILTERS[key];
+  const img = new Image();
+  img.onload = () => {
+    pc.width  = img.naturalWidth  || img.width;
+    pc.height = img.naturalHeight || img.height;
+    const ctx = pc.getContext('2d');
+    ctx.filter = f.css;
+    ctx.drawImage(img, 0, 0);
+    ctx.filter = 'none';
+
+    const id = ctx.getImageData(0, 0, pc.width, pc.height);
+    const d  = id.data;
+    for (let i = 0; i < d.length; i += 4) {
+      d[i]   = Math.min(255, (d[i]   * f.scale + f.lift) * f.bright * f.r);
+      d[i+1] = Math.min(255, (d[i+1] * f.scale + f.lift) * f.bright * f.g);
+      d[i+2] = Math.min(255, (d[i+2] * f.scale + f.lift) * f.bright * f.b);
+    }
+    ctx.putImageData(id, 0, 0);
+
+    if (f.noise > 0) {
+      const nd = ctx.createImageData(pc.width, pc.height);
+      const na = nd.data;
+      for (let i = 0; i < na.length; i += 4) {
+        const v = (Math.random()-0.5)*f.noise*2;
+        na[i]=na[i+1]=na[i+2]=128+v; na[i+3]=18+Math.random()*10;
+      }
+      ctx.putImageData(nd, 0, 0);
+      ctx.globalCompositeOperation = 'overlay';
+      ctx.filter = f.css;
+      ctx.drawImage(img, 0, 0);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.filter = 'none';
+      const id2 = ctx.getImageData(0, 0, pc.width, pc.height);
+      const d2  = id2.data;
+      for (let i = 0; i < d2.length; i += 4) {
+        d2[i]   = Math.min(255, (d2[i]   * f.scale + f.lift) * f.bright * f.r);
+        d2[i+1] = Math.min(255, (d2[i+1] * f.scale + f.lift) * f.bright * f.g);
+        d2[i+2] = Math.min(255, (d2[i+2] * f.scale + f.lift) * f.bright * f.b);
+      }
+      ctx.putImageData(id2, 0, 0);
+    }
+
+    if (f.vignette > 0) {
+      const vg = ctx.createRadialGradient(pc.width/2, pc.height/2, pc.width*0.2, pc.width/2, pc.height/2, pc.width*0.8);
+      vg.addColorStop(0, 'rgba(0,0,0,0)');
+      vg.addColorStop(1, `rgba(0,0,0,${f.vignette*0.7})`);
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, pc.width, pc.height);
+    }
+
+    cb(pc.toDataURL('image/jpeg', 0.93));
+  };
+  img.src = src;
+}
+
+// ── Capture
+function capture() {
+  if (isUploadMode) {
+    if (uploadedSrc) renderCanvas(uploadedSrc, currentFilter, addPhoto);
+    return;
+  }
+  if (!stream) return;
+  doFlash();
+  const w = videoEl.videoWidth||1080, h = videoEl.videoHeight||1440;
+  pc.width=w; pc.height=h;
+  const ctx = pc.getContext('2d');
+  if (facingMode==='user') { ctx.translate(w,0); ctx.scale(-1,1); }
+  ctx.drawImage(videoEl, 0, 0, w, h);
+  if (facingMode==='user') ctx.setTransform(1,0,0,1,0,0);
+  renderCanvas(pc.toDataURL('image/jpeg',0.96), currentFilter, addPhoto);
+}
+shutterBtn.addEventListener('click', capture);
+
+// ── Photo management
+function addPhoto(dataUrl) {
+  photos.push({ dataUrl, filter: currentFilter });
+  updateThumb();
+  rebuildGrid();
+}
+
+function updateThumb() {
+  if (photos.length === 0) {
+    thumbImg.style.display = 'none';
+    thumbEmpty.style.display = 'flex';
+    thumbBadge.style.display = 'none';
+  } else {
+    thumbImg.src = photos[photos.length-1].dataUrl;
+    thumbImg.style.display = 'block';
+    thumbEmpty.style.display = 'none';
+    thumbBadge.textContent = photos.length;
+    thumbBadge.style.display = 'flex';
+  }
+}
+
+// ── Gallery sheet
+function openSheet() {
+  overlay.classList.add('open');
+  sheet.classList.add('open');
+}
+function closeSheet() {
+  overlay.classList.remove('open');
+  sheet.classList.remove('open');
+}
+function rebuildGrid() {
+  sheetGrid.innerHTML = '';
+  sheetCount.textContent = `${photos.length}장`;
+  photos.forEach((p, i) => {
+    const img = document.createElement('img');
+    img.className = 'grid-item'; img.src = p.dataUrl;
+    img.addEventListener('click', () => { closeSheet(); openLb(i); });
+    sheetGrid.appendChild(img);
+  });
+}
+
+thumbImg.addEventListener('click', openSheet);
+thumbEmpty.addEventListener('click', () => { if (photos.length > 0) openSheet(); });
+sheetClose.addEventListener('click', closeSheet);
+overlay.addEventListener('click', closeSheet);
+
+// ── Lightbox
+function openLb(idx) {
+  currentLbIdx = idx;
+  lbImg.src = photos[idx].dataUrl;
+  lbNum.textContent = `${idx+1} / ${photos.length}`;
+  lightbox.classList.add('open');
+}
+lbClose.addEventListener('click', () => lightbox.classList.remove('open'));
+
+lbSave.addEventListener('click', () => {
+  if (currentLbIdx < 0) return;
+  const a = document.createElement('a');
+  a.href = photos[currentLbIdx].dataUrl;
+  a.download = `retrocam_${FILTERS[photos[currentLbIdx].filter].label.replace(/\s/g,'_')}_${Date.now()}.jpg`;
+  a.click();
+});
+
+lbDelete.addEventListener('click', () => {
+  if (currentLbIdx < 0) return;
+  photos.splice(currentLbIdx, 1);
+  updateThumb(); rebuildGrid();
+  lightbox.classList.remove('open');
+  currentLbIdx = -1;
+});
+
+// ── Mode toggle (camera ↔ upload)
+modeBtn.addEventListener('click', () => {
+  isUploadMode = !isUploadMode;
+  if (isUploadMode) {
+    modeBtn.querySelector('svg').style.stroke = '#FFD60A';
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    videoEl.style.display = 'none';
+    startScreen.style.display = 'none';
+    uploadZone.style.display = 'flex';
+    uploadPrev.style.display = 'none';
+    uploadedSrc = null;
+    shutterBtn.disabled = true;
+  } else {
+    modeBtn.querySelector('svg').style.stroke = 'rgba(255,255,255,0.6)';
+    uploadZone.style.display = 'none';
+    uploadPrev.style.display = 'none';
+    uploadedSrc = null;
+    videoEl.style.display = 'block';
+    startScreen.style.display = 'flex';
+    startScreen.style.opacity = '1';
+    shutterBtn.disabled = true;
+  }
+});
+
+uploadZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    uploadedSrc = ev.target.result;
+    uploadPrev.src = uploadedSrc;
+    uploadPrev.style.display = 'block';
+    uploadZone.style.display = 'none';
+    shutterBtn.disabled = false;
+    applyFilterUI(currentFilter);
+  };
+  reader.readAsDataURL(file);
+  fileInput.value = '';
+});
+
+// ── Init
+applyFilterUI('ip5');
+</script>
+</body>
+</html>
