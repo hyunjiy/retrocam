@@ -110,6 +110,7 @@ html, body {
   object-fit: cover;
   display: block;
 }
+#videoEl.mirrored { transform: scaleX(-1); }
 #uploadPreview {
   display: none;
   width: 100%; height: 100%;
@@ -418,19 +419,19 @@ const FILTERS = {
     label: 'iPhone 5',
     css: 'brightness(0.94) contrast(1.05) saturate(0.80)',
     r:1.01, g:0.98, b:0.97, lift:18, scale:0.88, bright:1.04,
-    noise:4, vignette:0.55, grain:0.10, smooth:true,
+    noise:0, vignette:0.55, grain:0, smooth:true,
   },
   ip6: {
     label: 'iPhone 6',
     css: 'brightness(1.03) contrast(1.02) saturate(0.95)',
     r:1.02, g:1.00, b:0.97, lift:0, scale:1.0, bright:1.03,
-    noise:1.5, vignette:0.20, grain:0.03, smooth:false,
+    noise:0, vignette:0.20, grain:0, smooth:false,
   },
   sony: {
     label: 'Sony',
     css: 'brightness(1.02) contrast(1.05) saturate(0.98)',
     r:0.98, g:1.00, b:1.04, lift:0, scale:1.0, bright:1.02,
-    noise:1.0, vignette:0.10, grain:0.01, smooth:false,
+    noise:0, vignette:0.10, grain:0, smooth:false,
   },
 };
 
@@ -508,6 +509,12 @@ async function startCamera() {
     });
     videoEl.srcObject = stream;
     videoEl.style.display = 'block';
+    // 전면 카메라면 좌우반전
+    if (facingMode === 'user') {
+      videoEl.classList.add('mirrored');
+    } else {
+      videoEl.classList.remove('mirrored');
+    }
     startScreen.style.opacity = '0';
     setTimeout(() => startScreen.style.display = 'none', 220);
     shutterBtn.disabled = false;
